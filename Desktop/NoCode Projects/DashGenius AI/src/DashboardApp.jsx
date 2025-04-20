@@ -1,433 +1,339 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect } from "react";
+import { Loader, Card, KPI } from "./components/CommonUI";
 import DragDropUpload from "./components/DragDropUpload";
+import { parseFileToJson } from "./utils/parseFileToJson";
+import { uploadAndAnalyzeFile } from "./aiService";
 import KPICard from "./components/KPICard";
-import { Chart, TimeScale } from "chart.js";
-import Confetti from "react-confetti";
-import "chartjs-adapter-date-fns";
-import "./sheetcraft.css";
-import { uploadAndAnalyzeFile, generateChartConfigs, sendQueryToBackend } from "./aiService";
+import ChartRenderer from "./components/ChartRenderer";
+import { calculateNumericSums } from "./utils/calculateSums";
 
-// --- Theme Toggle Helper ---
+// Theme toggle hook
 function useTheme() {
-  const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "dark");
+  const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "light");
   useEffect(() => {
-    document.body.classList.toggle("light", theme === "light");
+    document.body.classList.remove("dark", "light");
+    document.body.classList.add(theme);
     localStorage.setItem("theme", theme);
   }, [theme]);
   return [theme, setTheme];
 }
 
-function ThemeToggle({ theme, setTheme }) {
+function ThemeToggle({ theme, setTheme, outlineColor }) {
   return (
-    <button className="theme-toggle" onClick={() => setTheme(theme === "dark" ? "light" : "dark")} aria-label="Toggle theme">
+    <button
+      className="ml-4 p-2 rounded-lg hover:bg-blue-900/20 transition"
+      aria-label="Toggle theme"
+      onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+    >
       {theme === "dark" ? (
-        <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 0112.21 3a7 7 0 100 14 9 9 0 009-4.21z" /></svg>
+        <svg width="22" height="22" fill="none" stroke={outlineColor} strokeWidth="2" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 0112.21 3a7 7 0 100 14 9 9 0 009-4.21z" /></svg>
       ) : (
-        <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5" /><path d="M12 1v2m0 18v2m11-11h-2M3 12H1m16.95 6.95l-1.41-1.41M6.46 6.46L5.05 5.05m12.02 0l-1.41 1.41M6.46 17.54l-1.41 1.41" /></svg>
+        <svg width="22" height="22" fill="none" stroke={outlineColor} strokeWidth="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5" /><path d="M12 1v2m0 18v2m11-11h-2M3 12H1m16.95 6.95l-1.41-1.41M6.46 6.46L5.05 5.05m12.02 0l-1.41 1.41M6.46 17.54l-1.41 1.41" /></svg>
       )}
     </button>
   );
 }
 
-// --- Main App ---
 function DashboardApp() {
   const [theme, setTheme] = useTheme();
-  const [uploading, setUploading] = useState(false);
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiResult, setAiResult] = useState(null);
+  const [step, setStep] = useState(1); // 1: upload, 2: preview, 3: dashboard
+  const [file, setFile] = useState(null);
+  const [previewRows, setPreviewRows] = useState([]);
+  const [fullData, setFullData] = useState([]); // Store full data for dashboard creation
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [fileName, setFileName] = useState("");
-  const [previewRows, setPreviewRows] = useState(null);
-  const [userQuery, setUserQuery] = useState("");
-  const [queryResult, setQueryResult] = useState(null);
-  const [dashboardVisible, setDashboardVisible] = useState(false);
-  const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
-  const [modalOpen, setModalOpen] = useState(false);
-  const [modalContent, setModalContent] = useState("");
-  const [showConfetti, setShowConfetti] = useState(false);
-  const [confettiKey, setConfettiKey] = useState(0);
-  const [customTheme, setCustomTheme] = useState('glass');
+  const [dashboard, setDashboard] = useState(null);
 
-  // --- State for multi-file support and query history ---
-  const [uploadedFiles, setUploadedFiles] = useState([]); // [{ name, previewRows, aiResult, queries: [{q, a}] }]
-  const [activeFileIdx, setActiveFileIdx] = useState(0);
+  // Animation state for fade-in
+  const [animate, setAnimate] = useState(false);
+  useEffect(() => {
+    setAnimate(true);
+    return () => setAnimate(false);
+  }, [step]);
 
-  React.useEffect(() => {
-    if (theme === "dark") {
-      document.documentElement.classList.add("dark");
-      document.body.className = "dark bg-gray-950";
-    } else {
-      document.documentElement.classList.remove("dark");
-      document.body.className = "light bg-gray-100";
-    }
-  }, [theme]);
+  // Helper: get background color based on theme
+  const bgClass = theme === "light"
+    ? "bg-white"
+    : "bg-[#131b2a]";
 
-  // Drag & drop upload handler
-  const handleFileAccepted = async (file) => {
+  // Helper: get theme-based classes for text and boxes
+  const textClass = theme === "light" ? "text-gray-900" : "text-[#e0e6ef]";
+  const subTextClass = theme === "light" ? "text-gray-600" : "text-blue-200/90";
+  const cardClass = theme === "light"
+    ? "bg-white border border-gray-200 shadow"
+    : "dashboard-card border border-[#232946] text-[#e0e6ef]";
+  const tableHeadClass = theme === "light"
+    ? "bg-gray-100 text-gray-800"
+    : "bg-[#232c42] text-[#e0e6ef]";
+  const tableCellClass = theme === "light" ? "text-gray-900" : "text-[#e0e6ef]";
+  const tableBorderClass = theme === "light" ? "border-gray-200" : "border-[#232946]";
+  const preBoxClass = theme === "light"
+    ? "bg-gray-50 text-gray-900 border border-gray-200"
+    : "bg-[#181f2e] text-[#e0e6ef] border border-[#232946]";
+
+  // Animation utility classes
+  const animatedCardClass = "animate-fadeInUp transition-all duration-700";
+
+  // Custom color for logo background
+  const logoBg = theme === "light" ? "bg-gradient-to-tr from-teal-600 via-teal-400 to-cyan-400" : "bg-gradient-to-tr from-teal-900 via-teal-700 to-cyan-600";
+  // Remove header and card background shades for a cleaner look
+  const headerBg = "";
+  const cardBg = "";
+
+  // Step 1: Handle file upload and preview
+  const handleFileAccepted = async (uploadedFile) => {
     setError("");
-    setAiResult(null);
-    setQueryResult(null);
-    setUploading(true);
-    setFileName(file?.name || "");
+    setFile(uploadedFile);
+    setLoading(true);
     try {
-      const { ai, previewRows } = await uploadAndAnalyzeFile(file);
-      const newFile = {
-        name: file.name,
-        previewRows,
-        aiResult: ai,
-        queries: []
-      };
-      setUploadedFiles((prev) => [...prev, newFile]);
-      setActiveFileIdx(uploadedFiles.length); // Switch to new file
-      setPreviewRows(previewRows);
-      setAiResult(ai);
-      // --- DEBUG LOG ---
-      console.log("AI Result:", ai);
+      const rows = await parseFileToJson(uploadedFile);
+      setPreviewRows(rows.slice(0, 20)); // Show only first 20 rows for preview
+      setFullData(rows); // Store full data for dashboard creation
+      setStep(2);
     } catch (err) {
-      setError(err.message);
+      setError("Failed to parse file. Please upload a valid CSV or Excel file.");
     } finally {
-      setUploading(false);
-      setAiLoading(false);
+      setLoading(false);
     }
   };
 
-  // Switch active file
-  const handleSwitchFile = (idx) => {
-    setActiveFileIdx(idx);
-    const file = uploadedFiles[idx];
-    setFileName(file.name);
-    setPreviewRows(file.previewRows);
-    setAiResult(file.aiResult);
-    setQueryResult(null);
-    setUserQuery("");
-  };
-
-  // User query handler (extension: can be implemented as a separate endpoint)
-  const handleQuery = async () => {
-    if (!userQuery) return;
-    setAiLoading(true);
-    setQueryResult(null);
+  // Step 2: Create dashboard from uploaded data
+  const handleCreateDashboard = async () => {
+    setLoading(true);
     setError("");
+    console.log('[DEBUG] handleCreateDashboard called');
     try {
-      const { queryResponse } = await sendQueryToBackend(userQuery);
-      setQueryResult(queryResponse);
-      // Save to query history for this file
-      setUploadedFiles((prev) => prev.map((f, i) => i === activeFileIdx ? { ...f, queries: [...f.queries, { q: userQuery, a: queryResponse }] } : f));
+      // Calculate column sums for debugging (not shown to user)
+      const sums = calculateNumericSums(fullData);
+      console.log("[DEBUG] Column Sums from Uploaded Data:", sums);
+      // Continue with dashboard creation
+      const aiDashboard = await uploadAndAnalyzeFile(file, null, fullData);
+      console.log("[DEBUG] AI Dashboard Response:", aiDashboard);
+      console.log('[DEBUG] Raw AI Dashboard Response:', aiDashboard);
+      if (!aiDashboard) {
+        setError('AI backend returned no dashboard data.');
+        console.error('[ERROR] AI backend returned no dashboard data.');
+        setLoading(false);
+        return;
+      }
+      setDashboard(aiDashboard);
+      console.log('[DEBUG] setDashboard called with:', aiDashboard);
+      setStep(3);
+      console.log('[DEBUG] setStep(3) called');
     } catch (err) {
-      setError(err.response?.data?.error || err.message);
+      setError("Failed to generate dashboard. Please try again.");
+      console.error('[ERROR] handleCreateDashboard error:', err);
     } finally {
-      setAiLoading(false);
+      setLoading(false);
     }
   };
 
-  const handlePowerBIExport = () => {
-    if (!aiResult?.daxSuggestions) return;
-    const content = JSON.stringify(aiResult.daxSuggestions, null, 2);
-    const blob = new Blob([content], { type: "application/json" });
-    saveAs(blob, `${fileName.replace(/\.[^.]+$/, "")}_powerbi_export.json`);
-  };
-
-  const handleExportPreview = () => {
-    if (!previewRows || previewRows.length === 0) return;
-    const csv = Papa.unparse(previewRows);
-    const blob = new Blob([csv], { type: 'text/csv' });
-    saveAs(blob, `${fileName.replace(/\.[^.]+$/, "")}_preview.csv`);
-  };
-
-  const chartConfigs = aiResult?.visualizationRecommendations
-    ? generateChartConfigs(aiResult.visualizationRecommendations)
-    : [];
-
-  // Dynamically determine tile size based on metric type
-  const getCardClass = (type) => {
-    // KPI cards: span 1 col, charts: span 2 cols on desktop
-    if (type === 'kpi') return "col-span-1 row-span-1";
-    if (type === 'large-chart') return "col-span-2 row-span-2";
-    return "col-span-2 row-span-1"; // default for charts
-  };
-
-  const showInsight = (insight) => {
-    setModalContent(insight);
-    setModalOpen(true);
-  };
-
-  const closeModal = () => setModalOpen(false);
-
-  const LoadingBar = () => (
-    <div className="absolute inset-0 flex flex-col items-center justify-center z-50 bg-black/30 backdrop-blur-sm">
-      <div className="w-64 h-4 bg-gradient-to-r from-blue-800 via-blue-600 to-blue-400 rounded-full overflow-hidden shadow-lg animate-pulse relative">
-        <div className="absolute left-0 top-0 h-full w-1/3 bg-gradient-to-r from-blue-300 via-blue-100 to-blue-300 opacity-70 animate-slide" style={{animation: 'slide 1.2s infinite linear'}}></div>
-      </div>
-      <div className="mt-4 text-blue-200 font-semibold text-lg tracking-wide">Analyzing your data...</div>
-      <style>{`@keyframes slide { 0% { left: -33%; } 100% { left: 100%; } } .animate-slide { animation: slide 1.2s infinite linear; }`}</style>
+  // Tagline
+  const tagline = (
+    <div className={`text-xs tracking-widest ${subTextClass} font-bold mt-12 mb-2 text-center animate-fadeInUp`}
+         style={{letterSpacing: '0.2em'}}>
+      UNLOCK INSIGHTS. IGNITE GROWTH.
     </div>
   );
 
-  const InteractiveCard = ({ children, onClick, className = "" }) => (
-    <div
-      className={`transition-all duration-300 transform hover:scale-105 hover:shadow-2xl hover:ring-4 hover:ring-blue-400/30 cursor-pointer ${className}`}
-      tabIndex={0}
-      role="button"
-      onClick={onClick}
-      onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && onClick && onClick(e)}
-      aria-pressed="false"
-    >
-      {children}
-    </div>
-  );
-
-  const renderInsights = () => (
-    aiResult?.insights && aiResult.insights.length > 0 ? (
-      <div className="flex flex-wrap gap-3 mt-4 mb-2">
-        {aiResult.insights.map((insight, idx) => (
-          <span
-            key={idx}
-            className="px-4 py-2 rounded-full bg-gradient-to-r from-blue-700 via-blue-500 to-blue-400 text-white font-medium shadow cursor-pointer hover:scale-105 transition text-sm"
-            onClick={() => showInsight(insight)}
-          >
-            💡 {insight.length > 70 ? insight.slice(0, 67) + '...' : insight}
-          </span>
-        ))}
-      </div>
-    ) : null
-  );
-
-  const triggerConfetti = () => {
-    setConfettiKey(prev => prev + 1);
-    setShowConfetti(true);
-    setTimeout(() => setShowConfetti(false), 2200);
-  };
-
-  const milestoneKPI = (kpi) => {
-    if (!kpi || typeof kpi !== 'object') return false;
-    // Example: trigger for value > 10,000 or change > 10%
-    return (parseFloat(kpi.value) > 10000 || Math.abs(parseFloat(kpi.change)) > 10);
-  };
-
-  const AnimatedChart = (props) => (
-    <div className="transition-transform duration-700 ease-out animate-fadeInUp">
-      <Chart {...props} />
-      <style>{`@keyframes fadeInUp { from { opacity: 0; transform: translateY(30px);} to { opacity: 1; transform: none;} } .animate-fadeInUp { animation: fadeInUp 0.8s cubic-bezier(.23,1.01,.32,1) both;}`}</style>
-    </div>
-  );
-
-  const themeOptions = [
-    { label: 'Glass', value: 'glass' },
-    { label: 'Dark', value: 'dark' },
-    { label: 'Light', value: 'light' },
-  ];
-
-  const themeClass = customTheme === 'glass' ? 'backdrop-blur bg-white/10 border border-white/10 shadow-lg' : customTheme === 'dark' ? 'bg-gradient-to-br from-gray-900 via-gray-800 to-gray-700 text-white' : 'bg-gradient-to-br from-blue-50 via-blue-100 to-white text-gray-900';
-
-  // --- Utility: Can Craft Dashboard ---
-  const canCraftDashboard = useMemo(() => {
-    return !!(aiResult && aiResult.keyMetrics && aiResult.keyMetrics.length > 0 && aiResult.visualizationRecommendations && aiResult.visualizationRecommendations.length > 0);
-  }, [aiResult]);
-
-  const kpiCards = aiResult?.keyMetrics && aiResult.keyMetrics.length > 0 ? (
-    aiResult.keyMetrics.map((kpi, idx) =>
-      <InteractiveCard key={idx} className={`dashboard-card h-full min-h-[180px] flex flex-col justify-between ${getCardClass('kpi')} ${themeClass}`}
-        onClick={() => {
-          showInsight(`KPI: ${typeof kpi === 'object' ? kpi.title : kpi}`);
-          if (milestoneKPI(kpi)) triggerConfetti();
-        }}>
-        <KPICard {...(typeof kpi === 'object' ? kpi : { title: kpi, value: 'N/A', change: 0, changeLabel: 'No value' })} />
-      </InteractiveCard>
-    )
-  ) : null;
-
-  // Patch: Map 'horizontalBar' to 'bar' type for Chart.js v4+
-  function patchChartType(type) {
-    if (type === 'horizontalBar') return 'bar';
-    return type;
-  }
-
-  const charts = chartConfigs.length > 0 ? (
-    chartConfigs.map((cfg, idx) => (
-      <InteractiveCard className={`dashboard-card h-full min-h-[220px] flex flex-col justify-between ${getCardClass((idx === 0 && chartConfigs.length > 2) ? 'large-chart' : 'chart')} ${themeClass}`} key={idx}
-        onClick={() => showInsight(cfg.options?.plugins?.title?.text || `Chart ${idx + 1}`)}>
-        <AnimatedChart type={patchChartType(cfg.type)} data={cfg.data} options={cfg.options} />
-      </InteractiveCard>
-    ))
-  ) : null;
-
-  const renderThemeToggle = () => (
-    <div className="flex gap-2 items-center mb-4">
-      <span className="text-xs font-semibold text-gray-400">Theme:</span>
-      {themeOptions.map(opt => (
-        <button key={opt.value} className={`px-3 py-1 rounded-full border text-xs font-semibold transition-all duration-200 ${customTheme === opt.value ? 'bg-blue-500 text-white border-blue-500' : 'bg-transparent border-gray-400 text-gray-400 hover:bg-gray-100 hover:text-blue-700'}`} onClick={() => setCustomTheme(opt.value)}>{opt.label}</button>
-      ))}
-    </div>
-  );
-
-  const handleCraftDashboard = () => {
-    if (canCraftDashboard) {
-      setDashboardVisible(true);
-    } else {
-      setError("No dashboard generated. Please upload a supported file and wait for analysis to complete.");
-    }
-  };
-
-  // --- Enhanced Data Preview Table ---
-  const renderEnhancedPreview = ({ rows }) => {
-    if (!rows || rows.length === 0) return <div className="text-gray-400 p-5">No data preview available.</div>;
-    const columns = Object.keys(rows[0] || {});
+  // Render step 1: Upload
+  if (step === 1) {
     return (
-      <div className="preview-table w-full text-sm">
-        <div className="preview-header flex bg-gray-800 text-white font-semibold rounded-t-xl">
-          {columns.map(col => (
-            <div key={col} className="preview-cell py-2 px-4 border-r border-gray-700 last:border-none">{col}</div>
-          ))}
-        </div>
-        <div className="preview-body">
-          {rows.slice(0, 15).map((row, idx) => (
-            <div key={idx} className="preview-row flex border-b border-gray-700 last:border-none">
-              {columns.map(col => (
-                <div key={col} className="preview-cell py-2 px-4 truncate max-w-xs">{row[col]}</div>
-              ))}
+      <div className={`${bgClass} min-h-screen flex flex-col items-center justify-center px-2 pb-16 transition-all duration-700 ${animate ? "animate-fadeInUp" : ""}`}>
+        <header className="flex flex-row items-center justify-between px-8 pt-8 w-full max-w-4xl mx-auto mb-4" style={{minHeight:'72px', alignItems:'center', display:'flex', background:'none'}}>
+          <div className="flex items-center gap-2 text-xl font-bold h-full" style={{textAlign: 'left', alignItems:'center', display:'flex'}}>
+            <span className={`${logoBg} rounded-lg px-2 py-1 text-white shadow-md flex items-center h-full`}>Dash</span>
+            <span className="text-teal-500 font-bold flex items-center h-full">Genius</span>
+            <span className="text-[#232946] dark:text-white flex items-center h-full">AI</span>
+          </div>
+          <div className="flex items-center justify-end h-full" style={{alignItems:'center', display:'flex'}}>
+            <span style={{display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+              <ThemeToggle theme={theme} setTheme={setTheme} outlineColor={theme === 'light' ? '#232946' : '#fff'} />
+            </span>
+          </div>
+        </header>
+        <main className="flex-1 flex flex-col w-full max-w-3xl mx-auto px-2 sm:px-4 md:px-8 py-4 sm:py-8 items-center">
+          {tagline}
+          <h1 className={`text-4xl md:text-5xl font-extrabold text-center mb-4 leading-tight mt-6 animate-fadeInUp ${textClass}`}>Upload your data to generate a dashboard</h1>
+          <p className={`text-lg max-w-2xl text-center mb-8 animate-fadeInUp ${subTextClass}`}>Start by uploading your spreadsheet or dataset. Supported formats: CSV, XLSX, XLS.</p>
+          <div className="w-full animate-fadeInUp text-center flex justify-center">
+            <div className={`rounded-2xl shadow-lg p-8 w-full max-w-xl ${cardBg}`} style={{minHeight:'220px', display:'flex', alignItems:'center', justifyContent:'center'}}>
+              <DragDropUpload onFileAccepted={handleFileAccepted} uploading={loading} error={error} />
             </div>
-          ))}
-        </div>
+          </div>
+        </main>
       </div>
     );
-  };
+  }
 
-  // --- HEADER ---
-  const Header = (
-    <header className="navbar">
-      <div className="logo flex items-center gap-2 text-2xl font-extrabold">
-        <div className="logo-icon">
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
-        </div>
-        DashGenius <span>AI</span>
+  // Render step 2: Preview
+  if (step === 2) {
+    return (
+      <div className={`${bgClass} min-h-screen flex flex-col items-center justify-center px-2 pb-16 transition-all duration-700 ${animate ? "animate-fadeInUp" : ""}`}>
+        <header className="flex flex-row items-center justify-between px-8 pt-8 w-full max-w-4xl mx-auto mb-4" style={{minHeight:'72px', alignItems:'center', display:'flex', background:'none'}}>
+          <div className="flex items-center gap-2 text-xl font-bold h-full" style={{textAlign: 'left', alignItems:'center', display:'flex'}}>
+            <span className={`${logoBg} rounded-lg px-2 py-1 text-white shadow-md flex items-center h-full`}>Dash</span>
+            <span className="text-teal-500 font-bold flex items-center h-full">Genius</span>
+            <span className="text-[#232946] dark:text-white flex items-center h-full">AI</span>
+          </div>
+          <div className="flex items-center justify-end h-full" style={{alignItems:'center', display:'flex'}}>
+            <span style={{display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+              <ThemeToggle theme={theme} setTheme={setTheme} outlineColor={theme === 'light' ? '#232946' : '#fff'} />
+            </span>
+          </div>
+        </header>
+        <main className="flex-1 flex flex-col w-full max-w-3xl mx-auto px-2 sm:px-4 md:px-8 py-4 sm:py-8 items-center">
+          {tagline}
+          <h2 className={`text-2xl font-bold mb-2 mt-6 animate-fadeInUp text-center ${textClass}`}>Preview your data</h2>
+          <p className={`mb-4 animate-fadeInUp text-center ${subTextClass}`}>Below is a preview of your uploaded file: <span className="font-semibold text-blue-400">{file.name}</span></p>
+          <div className="max-w-2xl w-full mx-auto animate-fadeInUp flex flex-col items-center">
+            <Card className={`overflow-x-auto dashboard-card shadow-xl p-4 rounded-2xl ${cardBg}`} style={{minHeight:'180px', display:'flex', alignItems:'center', justifyContent:'center'}}>
+              <div className="font-semibold mb-2 text-base text-center">Preview Data</div>
+              <table className="min-w-full border-collapse text-center text-xs">
+                <thead>
+                  <tr>
+                    {previewRows[0] && Object.keys(previewRows[0]).map((col) => (
+                      <th key={col} className={`px-2 py-1 border-b text-left font-bold uppercase tracking-wider text-center ${tableHeadClass} ${tableBorderClass}`}>{col}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {previewRows.slice(0, 6).map((row, idx) => (
+                    <tr key={idx} className="hover:bg-blue-50 dark:hover:bg-blue-900/20">
+                      {Object.values(row).map((val, i) => (
+                        <td key={i} className={`px-2 py-1 border-b text-center ${tableCellClass} ${tableBorderClass}`}>{val}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {previewRows.length > 6 && <div className="text-xs text-blue-400 mt-2 text-center">Showing first 6 rows only</div>}
+            </Card>
+            <div className="flex justify-center mt-6 w-full">
+              <button
+                className="btn-primary px-8 py-3 rounded-xl font-bold text-lg shadow-lg transition-all hover:scale-105 bg-blue-600 text-white dark:bg-blue-400 dark:text-[#232946]"
+                onClick={handleCreateDashboard}
+                disabled={loading}
+                style={{minWidth: '220px'}}
+              >
+                {loading ? "Crafting Dashboard..." : "Craft Dashboard"}
+              </button>
+            </div>
+          </div>
+        </main>
       </div>
-      <nav className="nav-links">
-        <a href="#features" className="nav-link">Features</a>
-        <a href="#templates" className="nav-link">Templates</a>
-        <a href="#pricing" className="nav-link">Pricing</a>
-        <a href="#blog" className="nav-link">Blog</a>
-      </nav>
-      <ThemeToggle theme={theme} setTheme={setTheme} />
-    </header>
-  );
+    );
+  }
 
-  // --- HERO ---
-  const Hero = (
-    <section className="hero">
-      <div className="tagline">SPREADSHEETS REIMAGINED</div>
-      <h1 className="headline">Transform words into dashboards in seconds</h1>
-      <p className="description">Simply upload your data and let DashGenius AI generate beautiful, actionable dashboards and insights in seconds.</p>
-    </section>
-  );
-
+  // Render step 3: Dashboard
   return (
-    <div className={`sheetcraft-root ${theme}`}> {/* sheetcraft-root for global theme and background */}
-      {Header}
-      {Hero}
-      <div className="container">
-        {/* --- Main Fluid One-Pager Layout --- */}
-        <div className="w-full min-h-screen flex flex-col items-center justify-start bg-gradient-to-br from-[#0f172a] via-[#1e293b] to-[#0f172a] px-2 md:px-0">
-          <div className="max-w-6xl w-full flex flex-col gap-8 py-10">
-            {/* Header & Hero (if no data) */}
-            {(!previewRows || previewRows.length === 0) && !aiResult && (
-              <div className="flex flex-col items-center justify-center py-8">
-                <DragDropUpload onFileAccepted={handleFileAccepted} uploading={uploading} error={error} />
-                <div className="mt-6 text-blue-200 text-lg">Upload a CSV or Excel file to get started.</div>
+    <div className={`${bgClass} min-h-screen flex flex-col items-center justify-center px-2 pb-16 transition-all duration-700 ${animate ? "animate-fadeInUp" : ""}`}>
+      <header className="flex flex-row items-center justify-between px-8 pt-8 w-full max-w-4xl mx-auto mb-4" style={{minHeight:'72px', alignItems:'center', display:'flex', background:'none'}}>
+        <div className="flex items-center gap-2 text-xl font-bold h-full" style={{textAlign: 'left', alignItems:'center', display:'flex'}}>
+          <span className={`${logoBg} rounded-lg px-2 py-1 text-white shadow-md flex items-center h-full`}>Dash</span>
+          <span className="text-teal-500 font-bold flex items-center h-full">Genius</span>
+          <span className="text-[#232946] dark:text-white flex items-center h-full">AI</span>
+        </div>
+        <div className="flex items-center justify-end h-full" style={{alignItems:'center', display:'flex'}}>
+          <span style={{display: 'flex', alignItems: 'center', justifyContent: 'center'}}>
+            <ThemeToggle theme={theme} setTheme={setTheme} outlineColor={theme === 'light' ? '#232946' : '#fff'} />
+          </span>
+        </div>
+      </header>
+      <main className="flex-1 flex flex-col w-full max-w-6xl mx-auto px-2 sm:px-4 md:px-8 py-4 sm:py-8 items-center justify-center">
+        {tagline}
+        <h2 className={`text-2xl font-bold mb-2 mt-10 animate-fadeInUp text-center ${textClass}`}>Your Dashboard & Insights</h2>
+        <p className={`mb-6 animate-fadeInUp text-center ${subTextClass}`}>Below is your automatically generated dashboard and insights based on <span className="font-semibold text-blue-400">{file.name}</span></p>
+        {loading && <Loader />}
+        {step === 3 && dashboard ? (
+          <div className="w-full flex flex-col gap-8 dashboard-fade visible">
+            {/* KPI Cards */}
+            {dashboard.ai.keyMetrics && (
+              <div className="grid w-full gap-8 mb-10 items-center justify-center"
+                   style={{
+                     display: 'grid',
+                     gridTemplateColumns: `repeat(${Math.min(dashboard.ai.keyMetrics.length, 4)}, 1fr)`,
+                     gridAutoRows: '1fr',
+                     width: '100%',
+                     justifyItems: 'center',
+                     alignItems: 'center'
+                   }}>
+                {dashboard.ai.keyMetrics.map((kpi, idx) => (
+                  <KPICard
+                    key={idx}
+                    title={kpi.title}
+                    value={kpi.value}
+                    change={kpi.change}
+                    changeLabel={kpi.changeLabel}
+                    className={`kpi-card shadow-2xl p-8 rounded-2xl ${cardClass} ${animatedCardClass}`}
+                  />
+                ))}
               </div>
             )}
-
-            {/* Data Preview (fluid card) */}
-            {previewRows && (
-              <div className="bg-[#1e293b] rounded-2xl shadow-2xl border border-blue-900/40 p-6 flex flex-col gap-4">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-2xl font-bold tracking-tight text-blue-200 drop-shadow-lg">Data Preview</h2>
-                  <button
-                    className="btn-primary px-5 py-2 rounded-xl text-base font-semibold shadow-lg hover:scale-105 transition-transform"
-                    onClick={handleCraftDashboard}
-                    disabled={!canCraftDashboard || uploading || aiLoading}
-                  >
-                    <span className="inline-flex items-center gap-2">
-                      <svg xmlns='http://www.w3.org/2000/svg' width='22' height='22' fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth='2'><path d='M12 4v16m8-8H4m8 0h8'/></svg>
-                      Craft Dashboard
-                    </span>
-                  </button>
-                </div>
-                <div className="rounded-xl overflow-auto border border-blue-900/20 shadow-xl bg-gradient-to-br from-[#0f172a] via-[#1e293b] to-[#0f172a]">
-                  {renderEnhancedPreview({ rows: previewRows })}
-                </div>
-              </div>
-            )}
-
-            {/* Dashboard (fluid grid) */}
-            {dashboardVisible && aiResult && canCraftDashboard && (
-              <div className="dashboard-fade visible w-full">
-                <div className="dashboard-layout grid auto-rows-[260px] grid-cols-1 md:grid-cols-4 gap-6 items-stretch w-full min-h-[60vh]">
-                  {kpiCards}
-                  {charts}
-                </div>
-              </div>
-            )}
-
-            {/* Insights & Chat (fluid below dashboard) */}
-            {(aiResult && (aiResult.insights?.length > 0 || aiResult.keyMetrics?.length > 0)) && (
-              <div className="flex flex-col gap-6 mt-8">
-                {renderInsights()}
-                {/* Chat Section (query input & result) */}
-                <div className="chat-section mt-6">
-                  <div className="chat-input flex items-center bg-gradient-to-r from-[#0f172a] via-[#1e293b] to-[#0f172a] rounded-xl p-3 shadow border border-blue-900/20">
-                    <input
-                      type="text"
-                      className="flex-1 bg-transparent outline-none text-base text-blue-100 placeholder-blue-400 px-2"
-                      placeholder="Ask a question about your data..."
-                      value={userQuery}
-                      onChange={e => setUserQuery(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter') handleQuery(); }}
-                    />
-                    <button
-                      className="ml-3 btn-primary px-4 py-2 rounded-lg text-base font-semibold shadow hover:scale-110 transition-transform"
-                      onClick={handleQuery}
-                      disabled={!userQuery || uploading || aiLoading}
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2-7 20-4-9-9-4Z"></path><path d="M22 2 11 13"></path></svg>
-                    </button>
-                  </div>
-                  {queryResult && (
-                    <div className="mt-5 bg-gradient-to-br from-blue-900 via-blue-800 to-blue-700 rounded-xl p-5 shadow-lg text-white border border-blue-900/30">
-                      <div className="font-semibold text-lg mb-1 flex items-center gap-2">
-                        <svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' fill='none' viewBox='0 0 24 24' stroke='currentColor' strokeWidth='2'><path d='M12 20v-6m0 0V4m0 10H4m8 0h8' /></svg>
-                        Answer
+            {/* Charts */}
+            {dashboard.ai.visualizationRecommendations && dashboard.ai.visualizationRecommendations.length > 0 && (
+              <div className="flex flex-wrap gap-8 mb-10 w-full items-stretch justify-center">
+                {dashboard.ai.visualizationRecommendations.map((viz, idx) => {
+                  console.log('[DEBUG] Rendering Chart', viz);
+                  console.log('[DEBUG] Chart Config:', viz.config);
+                  return (
+                    <Card key={idx} className={`dashboard-card shadow-2xl p-8 rounded-2xl flex flex-col justify-between items-center ${cardClass} ${animatedCardClass}`}> 
+                      <div className="font-semibold mb-2 text-lg flex items-center gap-2 text-center justify-center w-full">
+                        <span className="inline-block w-2 h-2 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 animate-pulse"></span>
+                        {viz.config?.options?.plugins?.title?.display && viz.config?.options?.plugins?.title?.text
+                          ? viz.config.options.plugins.title.text
+                          : viz.chartType?.charAt(0).toUpperCase() + viz.chartType?.slice(1) + " Chart"}
                       </div>
-                      <div className="text-base whitespace-pre-line leading-relaxed">{queryResult}</div>
-                    </div>
-                  )}
-                </div>
+                      <ChartRenderer config={viz.config} className="w-full h-full" />
+                    </Card>
+                  );
+                })}
               </div>
             )}
+            {/* Insights */}
+            {dashboard.ai.insights && dashboard.ai.insights.length > 0 && (
+              <Card className={`dashboard-card shadow-xl p-8 rounded-2xl mb-10 items-center ${cardBg} ${animatedCardClass}`}>
+                <div className="font-semibold mb-4 text-lg text-left w-full">AI Insights</div>
+                <ul className="list-disc pl-8 text-base space-y-2 text-left w-full">
+                  {dashboard.ai.insights.map((insight, idx) => (
+                    <li key={idx} className="leading-relaxed text-left w-full">{insight}</li>
+                  ))}
+                </ul>
+              </Card>
+            )}
+            {/* Preview Table */}
+            {dashboard.previewRows && dashboard.previewRows.length > 0 && (
+              <Card className={`overflow-x-auto dashboard-card shadow-xl p-8 rounded-2xl items-center ${cardBg} ${animatedCardClass}`} style={{minHeight:'180px', display:'flex', alignItems:'center', justifyContent:'center'}}>
+                <div className="font-semibold mb-4 text-lg text-center w-full">Preview Data</div>
+                <table className="min-w-full border-collapse text-center w-full">
+                  <thead>
+                    <tr>
+                      {Object.keys(dashboard.previewRows[0]).map((col) => (
+                        <th key={col} className={`px-3 py-2 text-xs border-b text-left font-bold uppercase tracking-wider text-center w-full ${tableHeadClass} ${tableBorderClass}`}>{col}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dashboard.previewRows.slice(0, 6).map((row, idx) => (
+                      <tr key={idx} className="hover:bg-blue-50 dark:hover:bg-blue-900/20 w-full">
+                        {Object.values(row).map((val, i) => (
+                          <td key={i} className={`px-3 py-2 text-xs border-b text-center w-full ${tableCellClass} ${tableBorderClass}`}>{val}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {dashboard.previewRows.length > 6 && <div className="text-xs text-blue-400 mt-2 text-center">Showing first 6 rows only</div>}
+              </Card>
+            )}
           </div>
-        </div>
-      </div>
-      {/* Show error if present */}
-      {error && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-red-700 text-white px-6 py-3 rounded-xl shadow-xl font-semibold text-lg animate-pulse border-2 border-red-400">
-          {error}
-        </div>
-      )}
-      {/* Move Theme Toggle and Insights Below Dashboard */}
-      <div className="flex flex-col gap-4 mt-8">
-        {/* {renderThemeToggle()} -- Theme toggle removed as per user request */}
-        {renderInsights()}
-      </div>
-      {showConfetti && <Confetti key={confettiKey} width={window.innerWidth} height={window.innerHeight} numberOfPieces={350} gravity={0.25} recycle={false} />}
-      {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-          <div className="bg-white rounded-xl p-8 shadow-2xl max-w-lg w-full text-gray-900 relative animate-fadeIn">
-            <button onClick={closeModal} className="absolute top-2 right-3 text-gray-400 hover:text-gray-700 text-2xl">&times;</button>
-            <div className="text-lg font-semibold mb-3">Insight</div>
-            <div className="text-base whitespace-pre-line">{modalContent}</div>
+        ) : step === 3 && !dashboard ? (
+          <div className="text-red-400 text-sm mb-2 animate-fadeInUp text-center w-full">
+            [ERROR] Dashboard state is not set. Please check backend response and console logs.
           </div>
-          <style>{`@keyframes fadeIn { from { opacity: 0; transform: scale(0.95);} to { opacity: 1; transform: scale(1);} } .animate-fadeIn { animation: fadeIn 0.3s ease; }`}</style>
-        </div>
-      )}
+        ) : null}
+        {error && <div className="text-red-400 text-sm mb-2 animate-fadeInUp text-center w-full">{error}</div>}
+      </main>
     </div>
   );
 }

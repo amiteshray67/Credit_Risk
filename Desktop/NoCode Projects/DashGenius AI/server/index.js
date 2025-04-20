@@ -20,7 +20,21 @@ function parseFileToJson(file) {
       Papa.parse(file.data.toString(), {
         header: true,
         skipEmptyLines: true,
-        complete: (results) => resolve(results.data),
+        dynamicTyping: true, // Ensure numbers are parsed as numbers
+        complete: (results) => {
+          // Remove empty rows and trim whitespace from all fields
+          const cleaned = results.data.filter(
+            row => Object.values(row).some(v => v !== null && v !== undefined && String(v).trim() !== "")
+          ).map(row => {
+            const newRow = {};
+            for (const k in row) {
+              if (typeof row[k] === 'string') newRow[k] = row[k].trim();
+              else newRow[k] = row[k];
+            }
+            return newRow;
+          });
+          resolve(cleaned);
+        },
         error: (err) => reject(err),
       });
     });
@@ -29,7 +43,16 @@ function parseFileToJson(file) {
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
     const json = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
-    return Promise.resolve(json);
+    // Clean whitespace for Excel as well
+    const cleaned = json.map(row => {
+      const newRow = {};
+      for (const k in row) {
+        if (typeof row[k] === 'string') newRow[k] = row[k].trim();
+        else newRow[k] = row[k];
+      }
+      return newRow;
+    });
+    return Promise.resolve(cleaned);
   } else {
     return Promise.reject(new Error('Unsupported file type.'));
   }
@@ -51,6 +74,27 @@ app.post('/upload', async (req, res) => {
     // 2. Analyze with OpenAI
     const aiResponse = await analyzeWithAI(jsonData, req.body.userQuery || null);
     // 3. Return AI response
+    // --- Output value optimization: round numbers, format large numbers, etc. ---
+    if (aiResponse && aiResponse.keyMetrics) {
+      aiResponse.keyMetrics = aiResponse.keyMetrics.map(kpi => ({
+        ...kpi,
+        value: typeof kpi.value === 'number' ? Number(kpi.value.toFixed(2)) : kpi.value,
+        change: typeof kpi.change === 'number' ? Number(kpi.change.toFixed(2)) : kpi.change
+      }));
+    }
+    if (aiResponse && aiResponse.visualizationRecommendations) {
+      aiResponse.visualizationRecommendations = aiResponse.visualizationRecommendations.map(viz => {
+        if (viz.config && viz.config.data && viz.config.data.datasets) {
+          viz.config.data.datasets = viz.config.data.datasets.map(ds => ({
+            ...ds,
+            data: Array.isArray(ds.data)
+              ? ds.data.map(v => (typeof v === 'number' ? Number(v.toFixed(2)) : v))
+              : ds.data
+          }));
+        }
+        return viz;
+      });
+    }
     res.json({ ai: aiResponse, previewRows: jsonData.slice(0, 5) });
   } catch (err) {
     console.error('UPLOAD ERROR:', err);
@@ -138,37 +182,23 @@ async function analyzeWithAI(jsonData, userQuery = null) {
 
 // PROMPT ENGINEERING
 function buildOpenAIPrompt(jsonData, userQuery = null) {
-  const sampleRows = jsonData.slice(0, 10);
-  const columns = Object.keys(sampleRows[0] || {});
-  let prompt = `You are DashGenius AI, an elite data analyst and dashboard designer.\n`;
-  prompt += `The user has uploaded a spreadsheet. Your job is to deeply analyze this data and generate a dashboard and data preview that are visually stunning, interactive, and tailored to the user's actual data.\n`;
-  prompt += `First, create a modern, beautiful data preview table with the following features:\n`;
-  prompt += `- Show the first 10 rows and all columns.\n`;
-  prompt += `- Use pill-style status indicators for categorical/status columns (e.g., Completed, In Progress).\n`;
-  prompt += `- Show avatars or initials for any columns that look like names or people.\n`;
-  prompt += `- Use color-coded highlights for important values (e.g., overdue dates, negative numbers, high/low values).\n`;
-  prompt += `- The table should be scrollable and sortable by columns.\n`;
-  prompt += `- The preview must look visually similar to top SaaS dashboards (see Notion, Airtable, Linear, etc.).\n`;
-  prompt += `Data preview (JSON, first 10 rows):\n${JSON.stringify(sampleRows, null, 2)}\n`;
-  prompt += `Columns: ${columns.join(', ')}\n`;
-  prompt += `Next, generate a dashboard with these requirements:\n`;
-  prompt += `1. Analyze column types, relationships, time series, and KPIs.\n`;
-  prompt += `2. Recommend the most relevant, visually engaging dashboard layout for THIS data.\n`;
-  prompt += `3. For each chart or KPI, specify type, axes, groupings, and breakdowns that best represent the user's data.\n`;
-  prompt += `4. Use a layout and style that matches this UI: dark theme, glassmorphic cards, modern KPIs, interactive charts, clear legends, and a responsive, visually appealing layout.\n`;
-  prompt += `5. All visualizations and KPIs must be about the uploaded data and its actual columns and values.\n`;
-  prompt += `6. Generate concise, user-friendly insights and summaries.\n`;
-  prompt += `7. If there are opportunities for forecasting, anomaly detection, or PowerBI DAX queries, include them.\n`;
-  prompt += `8. The dashboard should only be generated after the user clicks the 'Craft Dashboard' button.\n`;
-  prompt += `9. For each visualization, ensure you return a valid Chart.js configuration object ('config') with a 'data' property (labels, datasets) and an 'options' property. Do NOT use 'xAxes' or 'yAxes' in the options; use 'scales' with 'x' and 'y' keys as per Chart.js v3+. Only return visualizations that are fully specified and mappable to Chart.js.\n`;
-  prompt += `10. If you return multiple visualizations, they must be arranged together in a cohesive dashboard layout (not as separate, individual charts).\n`;
-  prompt += `11. Respond in a single, well-structured JSON function-call format that includes:\n`;
-  prompt += `   - The enhanced data preview (with metadata for pills, avatars, highlights, etc.)\n`;
-  prompt += `   - The dashboard layout, KPIs, charts, and insights, all mapped to the user's data\n`;
-  prompt += `   - Any additional recommendations or smart features\n`;
-  prompt += `   - Do NOT include any generic content, only what is relevant to the user's file\n`;
-  prompt += `For keyMetrics, return an array of objects, each with at least: { title, value, change, changeLabel }. Example: [{ title: 'Total Sales', value: 12345, change: 5.2, changeLabel: 'vs last month' }]\n`;
-  prompt += `For visualizationRecommendations, each item must have a valid Chart.js config object with a 'data' and 'options' property. Do NOT return configs missing these fields.\n`;
+  let prompt = `You are DashGenius AI, an expert in data analysis and dashboard generation.\n`;
+  prompt += `You will be given a tabular dataset. Your task is to:\n`;
+  prompt += `1. Clean and format the data: Ensure all numeric and date fields are correctly typed, remove empty or malformed rows, and trim whitespace from all fields.\n`;
+  prompt += `2. Analyze the data: Detect column types, relationships, time series, and calculate all relevant KPIs and metrics.\n`;
+  prompt += `3. Generate insights: Draw all possible relevant insights, trends, anomalies, correlations, and actionable findings from the data.\n`;
+  prompt += `4. Recommend visualizations: Suggest the most appropriate and advanced visualizations (with Chart.js config), covering all key aspects and breakdowns of the data.\n`;
+  prompt += `5. Structure your response in the provided JSON function-call format only. Do not include any extra commentary or text.\n`;
+  prompt += `\nReturn the following:\n`;
+  prompt += `- columnTypes: mapping of column names to detected types\n`;
+  prompt += `- relationships: detected relationships between columns\n`;
+  prompt += `- timeSeries: columns that represent time series\n`;
+  prompt += `- keyMetrics: all possible key metrics and KPIs\n`;
+  prompt += `- visualizationRecommendations: advanced, relevant charts (Chart.js config)\n`;
+  prompt += `- insights: as many actionable and deep insights as possible\n`;
+  prompt += `- forecasting: (if applicable) time series analysis and forecasts\n`;
+  prompt += `- daxSuggestions: (if applicable) PowerBI DAX queries and data model suggestions\n`;
+  prompt += `- queryResponse: (if userQuery provided) answer the query with a visualization and explanation\n`;
   if (userQuery) {
     prompt += `\nUser query: "${userQuery}"\n`;
     prompt += `Answer the query and, if relevant, generate a suitable visualization config and text explanation. Ensure the response is specific to the user's data and query.`;

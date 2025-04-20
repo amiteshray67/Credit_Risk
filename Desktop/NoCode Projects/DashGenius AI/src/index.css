@@ -1,3 +1,49 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Improved dark mode text and card contrast for DashboardApp */
+body.dark {
+  background-color: #131b2a;
+  color: #e0e6ef;
+}
+
+.dark .card, .dark .dashboard-fade, .dark .dashboard-card, .dark .kpi-card {
+  background: #182237 !important;
+  color: #e0e6ef !important;
+  border-color: #26304a !important;
+  box-shadow: 0 4px 32px 0 #0002;
+}
+
+.dark .kpi-card strong, .dark .kpi-card span, .dark .kpi-card p, .dark .kpi-card div {
+  color: #e0e6ef !important;
+}
+
+.dark .dashboard-fade h2, .dark .dashboard-fade h3, .dark .dashboard-fade p, .dark .dashboard-fade span, .dark .dashboard-fade div {
+  color: #e0e6ef !important;
+}
+
+.dark .chartjs-render-monitor, .dark canvas {
+  background: transparent !important;
+}
+
+.dark .insight-card, .dark .ai-insights {
+  background: #161e2f !important;
+  color: #e0e6ef !important;
+}
+
+.dark .text-green-500 {
+  color: #4ade80 !important;
+}
+
+.dark .text-blue-400 {
+  color: #60a5fa !important;
+}
+
+.dark .text-blue-200 {
+  color: #bfdbfe !important;
+}
+
+.dark .text-gray-900, .dark .text-gray-600 {
+  color: #e0e6ef !important;
+}

@@ -13,15 +13,16 @@ import axios from 'axios';
  * @returns {string} Prompt for OpenAI API.
  */
 export function buildOpenAIPrompt(jsonData, userQuery = null) {
-  const sampleRows = jsonData.slice(0, 10);
+  const sampleRows = jsonData.length > 100 ? jsonData.slice(0, 100) : jsonData;
   const columns = Object.keys(sampleRows[0] || {});
   let prompt = `You are DashGenius AI, an expert data analyst and dashboard designer.\n`;
-  prompt += `Given the following data (first 10 rows shown as JSON):\n`;
-  prompt += `${JSON.stringify(sampleRows, null, 2)}\n`;
+  prompt += `You have access to the full dataset, not just a preview.\n`;
+  prompt += `Dataset contains ${jsonData.length} rows.\n`;
   prompt += `Columns: ${columns.join(', ')}\n`;
-  prompt += `Analyze the data structure, detect types, relationships, time series, KPIs.\n`;
-  prompt += `Recommend best visualizations, dashboard layout, and generate natural language insights.\n`;
-  prompt += `Identify forecasting opportunities and suggest DAX queries for PowerBI.\n`;
+  prompt += `Analyze the entire data structure, detect types, relationships, time series, KPIs.\n`;
+  prompt += `Recommend the most detailed and insightful dashboard possible, with multiple advanced visualizations, breakdowns, and deep insights.\n`;
+  prompt += `Suggest advanced visualizations (segmentation, time series, correlations, distributions, outlier analysis, etc.), dashboard layout, and generate natural language insights.\n`;
+  prompt += `Identify forecasting opportunities, trends, anomalies, and suggest DAX queries for PowerBI.\n`;
   if (userQuery) {
     prompt += `\nUser query: "${userQuery}"\n`;
     prompt += `Answer the query and, if relevant, generate a suitable visualization config and text explanation.`;
@@ -119,12 +120,17 @@ export function getOpenAIFunctionParams() {
  * Uploads file to backend and triggers AI analysis pipeline
  * @param {File} file - The uploaded file
  * @param {string} [userQuery] - Optional user query
+ * @param {Object[]} [fullData] - Full parsed data (optional, for frontend-only dashboard generation)
  * @returns {Promise<Object>} AI response and preview rows
  */
-export async function uploadAndAnalyzeFile(file, userQuery = null) {
+export async function uploadAndAnalyzeFile(file, userQuery = null, fullData = null) {
   const formData = new FormData();
   formData.append('file', file);
   if (userQuery) formData.append('userQuery', userQuery);
+  // If fullData is passed (for future extensibility)
+  if (fullData) {
+    formData.append('fullData', JSON.stringify(fullData));
+  }
   const response = await axios.post('http://localhost:5001/upload', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
