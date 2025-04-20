@@ -1,0 +1,22 @@
+# Node
+node_modules/
+.env
+build/
+dist/
+.cache/
+.next/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Mac
+.DS_Store
+
+# Misc
+coverage/
+*.local
+*.log
+*.tmp
+*.swp

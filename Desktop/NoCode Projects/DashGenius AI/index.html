@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DashGenius AI - Intelligent Dashboard Creator</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@2.5.0/fonts/remixicon.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #3C84F9;
+            --primary-dark: #2A6AD9;
+            --bg-dark: #121212;
+            --card-dark: #1E1E1E;
+            --text-dark: #FFFFFF;
+            --bg-light: #F8F9FA;
+            --card-light: #FFFFFF;
+            --text-light: #121212;
+        }
+        
+        body {
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
+        
+        .dark {
+            background-color: var(--bg-dark);
+            color: var(--text-dark);
+        }
+        
+        .light {
+            background-color: var(--bg-light);
+            color: var(--text-light);
+        }
+        
+        .card-dark {
+            background-color: var(--card-dark);
+        }
+        
+        .card-light {
+            background-color: var(--card-light);
+        }
+        
+        .btn-primary {
+            background-color: var(--primary);
+            transition: all 0.3s ease;
+        }
+        
+        .btn-primary:hover {
+            background-color: var(--primary-dark);
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(60, 132, 249, 0.3);
+        }
+        
+        .upload-area {
+            border: 2px dashed #3C84F9;
+            transition: all 0.3s ease;
+        }
+        
+        .upload-area:hover {
+            border-color: #2A6AD9;
+            background-color: rgba(60, 132, 249, 0.05);
+        }
+        
+        .progress-bar {
+            transition: width 0.5s ease;
+        }
+        
+        .dashboard-card {
+            transition: all 0.3s ease;
+        }
+        
+        .dashboard-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 30px -5px rgba(0, 0, 0, 0.2);
+        }
+        
+        .theme-switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 30px;
+        }
+        
+        .theme-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #2A6AD9;
+            transition: .4s;
+            border-radius: 34px;
+        }
+        
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 22px;
+            width: 22px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        
+        input:checked + .slider {
+            background-color: #3C84F9;
+        }
+        
+        input:checked + .slider:before {
+            transform: translateX(30px);
+        }
+        
+        .loader {
+            border-top-color: #3C84F9;
+            animation: spinner 1.5s linear infinite;
+        }
+        
+        @keyframes spinner {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .animated-panel {
+            animation: fadeInUp 0.5s ease forwards;
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        
+        @keyframes fadeInUp {
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .delay-1 { animation-delay: 0.1s; }
+        .delay-2 { animation-delay: 0.2s; }
+        .delay-3 { animation-delay: 0.3s; }
+        .delay-4 { animation-delay: 0.4s; }
+        
+        .pulse {
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(60, 132, 249, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(60, 132, 249, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(60, 132, 249, 0); }
+        }
+    </style>
+</head>
+<body class="dark min-h-screen font-sans">
+    <div class="container mx-auto px-4 py-8">
+        <!-- Header Section -->
+        <header class="flex justify-between items-center mb-12">
+            <div class="flex items-center">
+                <i class="ri-bar-chart-box-fill text-4xl text-blue-500 mr-3"></i>
+                <div>
+                    <h1 class="text-2xl md:text-3xl font-bold">DashGenius AI</h1>
+                    <p class="text-sm text-gray-400">Transform Excel data into beautiful dashboards</p>
+                </div>
+            </div>
+            <div class="flex items-center">
+                <span class="mr-2 text-sm"><i class="ri-moon-fill"></i></span>
+                <label class="theme-switch">
+                    <input type="checkbox" id="theme-toggle">
+                    <span class="slider"></span>
+                </label>
+                <span class="ml-2 text-sm"><i class="ri-sun-fill"></i></span>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main>
+            <!-- File Upload Section -->
+            <section class="mb-12 animated-panel">
+                <div class="card-dark rounded-xl p-6 shadow-lg">
+                    <h2 class="text-xl font-bold mb-4 flex items-center">
+                        <i class="ri-upload-cloud-2-line mr-2 text-blue-500"></i> 
+                        Upload Your Data
+                    </h2>
+                    <div class="upload-area rounded-lg p-8 text-center cursor-pointer">
+                        <i class="ri-file-excel-2-line text-5xl text-blue-500 mb-4"></i>
+                        <h3 class="font-semibold mb-2">Drag & drop your file here</h3>
+                        <p class="text-sm text-gray-400 mb-4">Supports .xlsx, .xls, .csv files</p>
+                        <button class="btn-primary text-white py-2 px-6 rounded-full font-medium">
+                            Browse Files
+                        </button>
+                    </div>
+                    <div class="mt-4 text-sm text-gray-400 flex items-center">
+                        <i class="ri-information-line mr-2"></i>
+                        <span>Maximum file size: 20MB</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- AI Processing Section -->
+            <section class="mb-12 animated-panel delay-1" id="processing-section">
+                <div class="card-dark rounded-xl p-6 shadow-lg">
+                    <h2 class="text-xl font-bold mb-4 flex items-center">
+                        <i class="ri-brain-line mr-2 text-blue-500"></i>
+                        AI Processing
+                    </h2>
+                    <div class="space-y-6">
+                        <div>
+                            <div class="flex justify-between mb-2">
+                                <span>Analyzing data structure</span>
+                                <span>100%</span>
+                            </div>
+                            <div class="w-full bg-gray-700 rounded-full h-2">
+                                <div class="bg-green-500 h-2 rounded-full" style="width: 100%"></div>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="flex justify-between mb-2">
+                                <span>Identifying correlations</span>
+                                <span>100%</span>
+                            </div>
+                            <div class="w-full bg-gray-700 rounded-full h-2">
+                                <div class="bg-green-500 h-2 rounded-full" style="width: 100%"></div>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="flex justify-between mb-2">
+                                <span>Generating visualizations</span>
+                                <span>80%</span>
+                            </div>
+                            <div class="w-full bg-gray-700 rounded-full h-2">
+                                <div class="bg-blue-500 h-2 rounded-full progress-bar" style="width: 80%"></div>
+                            </div>
+                        </div>
+                        <div>
+                            <div class="flex justify-between mb-2">
+                                <span>Building dashboard</span>
+                                <span>50%</span>
+                            </div>
+                            <div class="w-full bg-gray-700 rounded-full h-2">
+                                <div class="bg-blue-500 h-2 rounded-full progress-bar" style="width: 50%"></div>
+                            </div>
+                        </div>
+                        
+                        <div class="flex items-center justify-center py-4">
+                            <div class="loader mr-3 w-5 h-5 border-2 border-gray-600 border-t-2 rounded-full"></div>
+                            <span>Processing your data with AI...</span>
+                        </div>
+                        
+                        <div class="bg-blue-900 bg-opacity-20 rounded-lg p-4">
+                            <h3 class="font-semibold text-blue-500 mb-2">AI Insights</h3>
+                            <ul class="space-y-2 text-sm">
+                                <li class="flex items-start">
+                                    <i class="ri-check-line text-green-500 mr-2 mt-1"></i>
+                                    <span>Detected 5 numerical and 3 categorical columns</span>
+                                </li>
+                                <li class="flex items-start">
+                                    <i class="ri-check-line text-green-500 mr-2 mt-1"></i>
+                                    <span>Found strong correlation between Sales and Marketing Spend (0.87)</span>
+                                </li>
+                                <li class="flex items-start">
+                                    <i class="ri-check-line text-green-500 mr-2 mt-1"></i>
+                                    <span>Time series data detected with monthly seasonality</span>
+                                </li>
+                                <li class="flex items-start">
+                                    <i class="ri-lightbulb-flash-line text-yellow-500 mr-2 mt-1"></i>
+                                    <span>Recommending line charts for time series, bar charts for categorical comparisons</span>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Dashboard Preview Section -->
+            <section class="animated-panel delay-2" id="dashboard-section">
+                <h2 class="text-xl font-bold mb-6 flex items-center">
+                    <i class="ri-dashboard-line mr-2 text-blue-500"></i>
+                    Dashboard Preview
+                </h2>
+                
+                <!-- Dashboard Controls -->
+                <div class="flex justify-between items-center mb-6">
+                    <div>
+                        <button class="bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-md mr-2">
+                            <i class="ri-save-line mr-1"></i> Save
+                        </button>
+                        <button class="bg-gray-700 hover:bg-gray-800 text-white py-2 px-4 rounded-md">
+                            <i class="ri-share-line mr-1"></i> Share
+                        </button>
+                    </div>
+                    <div class="flex items-center">
+                        <span class="text-sm mr-2">Template:</span>
+                        <select class="bg-gray-800 border border-gray-700 rounded-md px-3 py-1 text-sm">
+                            <option>Sales Dashboard</option>
+                            <option>Marketing Analytics</option>
+                            <option>Financial Overview</option>
+                            <option>Custom</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <!-- Dashboard Grid -->
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <!-- KPI Cards Row -->
+                    <div class="lg:col-span-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <!-- KPI Card 1 -->
+                        <div class="card-dark rounded-xl p-4 shadow-lg dashboard-card">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <p class="text-gray-400 text-sm">Total Revenue</p>
+                                    <h3 class="text-2xl font-bold">$847,924</h3>
+                                    <p class="text-green-500 text-sm flex items-center mt-1">
+                                        <i class="ri-arrow-up-line mr-1"></i> 12.8% 
+                                        <span class="text-gray-400 ml-1">vs last year</span>
+                                    </p>
+                                </div>
+                                <div class="h-10 w-10 rounded-full bg-blue-500 bg-opacity-20 flex items-center justify-center">
+                                    <i class="ri-money-dollar-circle-line text-blue-500"></i>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- KPI Card 2 -->
+                        <div class="card-dark rounded-xl p-4 shadow-lg dashboard-card">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <p class="text-gray-400 text-sm">New Customers</p>
+                                    <h3 class="text-2xl font-bold">1,482</h3>
+                                    <p class="text-green-500 text-sm flex items-center mt-1">
+                                        <i class="ri-arrow-up-line mr-1"></i> 8.3% 
+                                        <span class="text-gray-400 ml-1">vs last month</span>
+                                    </p>
+                                </div>
+                                <div class="h-10 w-10 rounded-full bg-purple-500 bg-opacity-20 flex items-center justify-center">
+                                    <i class="ri-user-add-line text-purple-500"></i>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- KPI Card 3 -->
+                        <div class="card-dark rounded-xl p-4 shadow-lg dashboard-card">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <p class="text-gray-400 text-sm">Conversion Rate</p>
+                                    <h3 class="text-2xl font-bold">24.8%</h3>
+                                    <p class="text-red-500 text-sm flex items-center mt-1">
+                                        <i class="ri-arrow-down-line mr-1"></i> 2.1% 
+                                        <span class="text-gray-400 ml-1">vs target</span>
+                                    </p>
+                                </div>
+                                <div class="h-10 w-10 rounded-full bg-yellow-500 bg-opacity-20 flex items-center justify-center">
+                                    <i class="ri-percent-line text-yellow-500"></i>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- KPI Card 4 -->
+                        <div class="card-dark rounded-xl p-4 shadow-lg dashboard-card">
+                            <div class="flex justify-between items-start">
+                                <div>
+                                    <p class="text-gray-400 text-sm">Avg. Order Value</p>
+                                    <h3 class="text-2xl font-bold">$238</h3>
+                                    <p class="text-green-500 text-sm flex items-center mt-1">
+                                        <i class="ri-arrow-up-line mr-1"></i> 5.4% 
+                                        <span class="text-gray-400 ml-1">vs last year</span>
+                                    </p>
+                                </div>
+                                <div class="h-10 w-10 rounded-full bg-green-500 bg-opacity-20 flex items-center justify-center">
+                                    <i class="ri-shopping-cart-line text-green-500"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Chart 1: Line Chart -->
+                    <div class="lg:col-span-2 card-dark rounded-xl p-5 shadow-lg dashboard-card">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="font-bold">Revenue Trends</h3>
+                            <div class="flex text-sm">
+                                <button class="px-2 py-1 bg-blue-500 bg-opacity-20 text-blue-500 rounded-l-md">Month</button>
+                                <button class="px-2 py-1 bg-gray-800 rounded-r-md">Year</button>
+                            </div>
+                        </div>
+                        <div class="h-64">
+                            <canvas id="revenueChart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <!-- Chart 2: Pie Chart -->
+                    <div class="card-dark rounded-xl p-5 shadow-lg dashboard-card">
+                        <h3 class="font-bold mb-4">Sales by Category</h3>
+                        <div class="h-64">
+                            <canvas id="categoryChart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <!-- Chart 3: Bar Chart -->
+                    <div class="card-dark rounded-xl p-5 shadow-lg dashboard-card">
+                        <h3 class="font-bold mb-4">Top Products</h3>
+                        <div class="h-64">
+                            <canvas id="productsChart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <!-- Chart 4: Area Chart -->
+                    <div class="lg:col-span-2 card-dark rounded-xl p-5 shadow-lg dashboard-card">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="font-bold">Marketing vs Sales Performance</h3>
+                            <div>
+                                <button class="text-gray-400 hover:text-white">
+                                    <i class="ri-more-2-fill"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="h-64">
+                            <canvas id="marketingChart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <!-- Table Card -->
+                    <div class="lg:col-span-3 card-dark rounded-xl p-5 shadow-lg dashboard-card">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="font-bold">Recent Transactions</h3>
+                            <button class="text-sm text-blue-500">View All</button>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full">
+                                <thead>
+                                    <tr>
+                                        <th class="px-4 py-2 text-left text-sm text-gray-400">ID</th>
+                                        <th class="px-4 py-2 text-left text-sm text-gray-400">Customer</th>
+                                        <th class="px-4 py-2 text-left text-sm text-gray-400">Product</th>
+                                        <th class="px-4 py-2 text-left text-sm text-gray-400">Amount</th>
+                                        <th class="px-4 py-2 text-left text-sm text-gray-400">Status</th>
+                                        <th class="px-4 py-2 text-left text-sm text-gray-400">Date</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td class="px-4 py-3 text-sm">#TRX-428</td>
+                                        <td class="px-4 py-3 text-sm">John Smith</td>
+                                        <td class="px-4 py-3 text-sm">Premium Package</td>
+                                        <td class="px-4 py-3 text-sm">$1,200</td>
+                                        <td class="px-4 py-3 text-sm"><span class="px-2 py-1 bg-green-500 bg-opacity-20 text-green-500 rounded-full text-xs">Completed</span></td>
+                                        <td class="px-4 py-3 text-sm">2023-10-15</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="px-4 py-3 text-sm">#TRX-427</td>
+                                        <td class="px-4 py-3 text-sm">Emily Johnson</td>
+                                        <td class="px-4 py-3 text-sm">Standard License</td>
+                                        <td class="px-4 py-3 text-sm">$599</td>
+                                        <td class="px-4 py-3 text-sm"><span class="px-2 py-1 bg-blue-500 bg-opacity-20 text-blue-500 rounded-full text-xs">Processing</span></td>
+                                        <td class="px-4 py-3 text-sm">2023-10-14</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="px-4 py-3 text-sm">#TRX-426</td>
+                                        <td class="px-4 py-3 text-sm">Michael Brown</td>
+                                        <td class="px-4 py-3 text-sm">Enterprise Plan</td>
+                                        <td class="px-4 py-3 text-sm">$2,499</td>
+                                        <td class="px-4 py-3 text-sm"><span class="px-2 py-1 bg-green-500 bg-opacity-20 text-green-500 rounded-full text-xs">Completed</span></td>
+                                        <td class="px-4 py-3 text-sm">2023-10-12</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="px-4 py-3 text-sm">#TRX-425</td>
+                                        <td class="px-4 py-3 text-sm">Sarah Wilson</td>
+                                        <td class="px-4 py-3 text-sm">Basic Package</td>
+                                        <td class="px-4 py-3 text-sm">$299</td>
+                                        <td class="px-4 py-3 text-sm"><span class="px-2 py-1 bg-yellow-500 bg-opacity-20 text-yellow-500 rounded-full text-xs">Pending</span></td>
+                                        <td class="px-4 py-3 text-sm">2023-10-11</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Features & Customization Section -->
+            <section class="mt-12 animated-panel delay-3">
+                <div class="card-dark rounded-xl p-6 shadow-lg">
+                    <h2 class="text-xl font-bold mb-4 flex items-center">
+                        <i class="ri-tools-fill mr-2 text-blue-500"></i>
+                        Customize Your Dashboard
+                    </h2>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div class="bg-gray-800 rounded-lg p-4">
+                            <div class="flex items-center mb-3">
+                                <i class="ri-palette-line text-xl text-blue-500 mr-2"></i>
+                                <h3 class="font-semibold">Theme Options</h3>
+                            </div>
+                            <div class="space-y-3">
+                                <div>
+                                    <label class="block text-sm text-gray-400 mb-1">Primary Color</label>
+                                    <div class="flex space-x-2">
+                                        <div class="w-6 h-6 rounded-full bg-blue-500 cursor-pointer border-2 border-white"></div>
+                                        <div class="w-6 h-6 rounded-full bg-purple-500 cursor-pointer"></div>
+                                        <div class="w-6 h-6 rounded-full bg-green-500 cursor-pointer"></div>
+                                        <div class="w-6 h-6 rounded-full bg-yellow-500 cursor-pointer"></div>
+                                        <div class="w-6 h-6 rounded-full bg-red-500 cursor-pointer"></div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-gray-400 mb-1">Font Family</label>
+                                    <select class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm">
+                                        <option>Inter</option>
+                                        <option>Roboto</option>
+                                        <option>Poppins</option>
+                                        <option>Montserrat</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-gray-400 mb-1">Card Style</label>
+                                    <select class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm">
+                                        <option>Rounded corners</option>
+                                        <option>Flat</option>
+                                        <option>Elevated</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="bg-gray-800 rounded-lg p-4">
+                            <div class="flex items-center mb-3">
+                                <i class="ri-line-chart-line text-xl text-blue-500 mr-2"></i>
+                                <h3 class="font-semibold">Chart Options</h3>
+                            </div>
+                            <div class="space-y-3">
+                                <div>
+                                    <label class="block text-sm text-gray-400 mb-1">Chart Animation</label>
+                                    <select class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm">
+                                        <option>Enabled</option>
+                                        <option>Disabled</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-gray-400 mb-1">Legend Position</label>
+                                    <select class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm">
+                                        <option>Top</option>
+                                        <option>Bottom</option>
+                                        <option>Left</option>
+                                        <option>Right</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-gray-400 mb-1">Data Labels</label>
+                                    <div class="flex items-center">
+                                        <input type="checkbox" class="rounded text-blue-500 focus:ring-blue-500 h-4 w-4 mr-2">
+                                        <span class="text-sm">Show values on charts</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="bg-gray-800 rounded-lg p-4">
+                            <div class="flex items-center mb-3">
+                                <i class="ri-layout-grid-line text-xl text-blue-500 mr-2"></i>
+                                <h3 class="font-semibold">Layout Options</h3>
+                            </div>
+                            <div class="space-y-3">
+                                <div>
+                                    <label class="block text-sm text-gray-400 mb-1">Dashboard Layout</label>
+                                    <select class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm">
+                                        <option>Grid</option>
+                                        <option>Masonry</option>
+                                        <option>List</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-gray-400 mb-1">Card Density</label>
+                                    <select class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-sm">
+                                        <option>Comfortable</option>
+                                        <option>Compact</option>
+                                        <option>Expanded</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <button class="mt-2 w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-md">
+                                        Apply Changes
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- AI API Key Section -->
+            <section class="mt-12 animated-panel delay-4">
+                <div class="card-dark rounded-xl p-6 shadow-lg">
+                    <h2 class="text-xl font-bold mb-4 flex items-center">
+                        <i class="ri-key-2-line mr-2 text-blue-500"></i>
+                        Configure AI Services
+                    </h2>
+                    
+                    <div class="bg-blue-900 bg-opacity-10 rounded-lg p-4 mb-6">
+                        <p class="text-sm">
+                            <i class="ri-information-line text-blue-500 mr-2"></i>
+                            Connect your own OpenAI API key for advanced AI analysis and unlimited processing. Your key is stored securely and never shared.
+                        </p>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label class="block text-sm text-gray-400 mb-1">AI Provider</label>
+                            <select class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 mb-4">
+                                <option>OpenAI (GPT-4)</option>
+                                <option>OpenAI (GPT-3.5)</option>
+                                <option>Anthropic Claude</option>
+                                <option>Cohere Command</option>
+                            </select>
+                            
+                            <label class="block text-sm text-gray-400 mb-1">API Key</label>
+                            <div class="flex">
+                                <input type="password" placeholder="sk-..." class="flex-grow bg-gray-700 border border-gray-600 rounded-l px-3 py-2">
+                                <button class="bg-gray-600 px-3 py-2 rounded-r">
+                                    <i class="ri-eye-line"></i>
+                                </button>
+                            </div>
+                            
+                            <div class="mt-4">
+                                <button class="bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-md w-full">
+                                    Save API Key
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="bg-gray-800 rounded-lg p-4">
+                            <h3 class="font-semibold mb-3">AI Processing Options</h3>
+                            <div class="space-y-3">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-sm">Advanced correlations</span>
+                                    <label class="relative inline-flex items-center cursor-pointer">
+                                        <input type="checkbox" value="" class="sr-only peer" checked>
+                                        <div class="w-11 h-6 bg-gray-700 rounded-full peer peer-checked:bg-blue-600 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
+                                    </label>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-sm">Anomaly detection</span>
+                                    <label class="relative inline-flex items-center cursor-pointer">
+                                        <input type="checkbox" value="" class="sr-only peer" checked>
+                                        <div class="w-11 h-6 bg-gray-700 rounded-full peer peer-checked:bg-blue-600 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
+                                    </label>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-sm">Forecasting predictions</span>
+                                    <label class="relative inline-flex items-center cursor-pointer">
+                                        <input type="checkbox" value="" class="sr-only peer">
+                                        <div class="w-11 h-6 bg-gray-700 rounded-full peer peer-checked:bg-blue-600 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
+                                    </label>
+                                </div>
+                                <div class="flex items-center justify-between">
+                                    <span class="text-sm">Text sentiment analysis</span>
+                                    <label class="relative inline-flex items-center cursor-pointer">
+                                        <input type="checkbox" value="" class="sr-only peer">
+                                        <div class="w-11 h-6 bg-gray-700 rounded-full peer peer-checked:bg-blue-600 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer class="mt-16 text-center text-gray-500 text-sm">
+            <p> 2023 DashGenius AI. All rights reserved.</p>
+            <div class="flex justify-center mt-2 space-x-4">
+                <a href="#" class="hover:text-blue-500">Terms of Service</a>
+                <a href="#" class="hover:text-blue-500">Privacy Policy</a>
+                <a href="#" class="hover:text-blue-500">Contact</a>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+        // Theme Toggle Functionality
+        const themeToggle = document.getElementById('theme-toggle');
+        const body = document.body;
+        const cards = document.querySelectorAll('.card-dark');
+        
+        themeToggle.addEventListener('change', function() {
+            if (this.checked) {
+                body.classList.remove('dark');
+                body.classList.add('light');
+                cards.forEach(card => {
+                    card.classList.remove('card-dark');
+                    card.classList.add('card-light');
+                });
+            } else {
+                body.classList.remove('light');
+                body.classList.add('dark');
+                cards.forEach(card => {
+                    card.classList.remove('card-light');
+                    card.classList.add('card-dark');
+                });
+            }
+            // Reload charts with new theme colors
+            initCharts();
+        });
+        
+        // Initialize Charts
+        function initCharts() {
+            const isDark = body.classList.contains('dark');
+            const textColor = isDark ? '#FFFFFF' : '#121212';
+            const gridColor = isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
+            
+            // Revenue Chart (Line)
+            const revenueCtx = document.getElementById('revenueChart').getContext('2d');
+            const revenueChart = new Chart(revenueCtx, {
+                type: 'line',
+                data: {
+                    labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+                    datasets: [{
+                        label: 'Revenue 2023',
+                        data: [65000, 59000, 80000, 81000, 56000, 75000, 90000, 81000, 94000, 78000, 95000, 98000],
+                        borderColor: '#3C84F9',
+                        backgroundColor: 'rgba(60, 132, 249, 0.1)',
+                        tension: 0.4,
+                        fill: true
+                    }, {
+                        label: 'Revenue 2022',
+                        data: [45000, 49000, 60000, 71000, 46000, 65000, 70000, 71000, 74000, 68000, 75000, 88000],
+                        borderColor: 'rgba(255, 255, 255, 0.3)',
+                        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                        tension: 0.4,
+                        fill: true,
+                        borderDash: [5, 5]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: {
+                                color: textColor
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: {
+                                color: gridColor
+                            },
+                            ticks: {
+                                color: textColor
+                            }
+                        },
+                        x: {
+                            grid: {
+                                color: gridColor
+                            },
+                            ticks: {
+                                color: textColor
+                            }
+                        }
+                    }
+                }
+            });
+            
+            // Category Chart (Pie)
+            const categoryCtx = document.getElementById('categoryChart').getContext('2d');
+            const categoryChart = new Chart(categoryCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Electronics', 'Clothing', 'Home & Garden', 'Sports', 'Beauty'],
+                    datasets: [{
+                        data: [35, 25, 20, 10, 10],
+                        backgroundColor: [
+                            '#3C84F9',
+                            '#9b5de5',
+                            '#f15bb5',
+                            '#fee440',
+                            '#00bbf9'
+                        ],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'right',
+                            labels: {
+                                color: textColor
+                            }
+                        }
+                    }
+                }
+            });
+            
+            // Products Chart (Bar)
+            const productsCtx = document.getElementById('productsChart').getContext('2d');
+            const productsChart = new Chart(productsCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['Laptop', 'Smartphone', 'Headphones', 'Smartwatch', 'Camera'],
+                    datasets: [{
+                        label: 'Units Sold',
+                        data: [480, 390, 320, 280, 230],
+                        backgroundColor: '#3C84F9'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    indexAxis: 'y',
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            grid: {
+                                color: gridColor
+                            },
+                            ticks: {
+                                color: textColor
+                            }
+                        },
+                        x: {
+                            beginAtZero: true,
+                            grid: {
+                                color: gridColor
+                            },
+                            ticks: {
+                                color: textColor
+                            }
+                        }
+                    }
+                }
+            });
+            
+            // Marketing Chart (Area)
+            const marketingCtx = document.getElementById('marketingChart').getContext('2d');
+            const marketingChart = new Chart(marketingCtx, {
+                type: 'line',
+                data: {
+                    labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+                    datasets: [{
+                        label: 'Marketing Spend',
+                        data: [15000, 18000, 22000, 25000, 28000, 30000, 35000, 32000, 38000, 40000, 42000, 45000],
+                        borderColor: '#9b5de5',
+                        backgroundColor: 'rgba(155, 93, 229, 0.1)',
+                        tension: 0.4,
+                        fill: true
+                    }, {
+                        label: 'Sales Revenue',
+                        data: [45000, 49000, 60000, 71000, 75000, 85000, 90000, 91000, 94000, 98000, 105000, 118000],
+                        borderColor: '#3C84F9',
+                        backgroundColor: 'rgba(60, 132, 249, 0.1)',
+                        tension: 0.4,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: {
+                                color: textColor
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: {
+                                color: gridColor
+                            },
+                            ticks: {
+                                color: textColor
+                            }
+                        },
+                        x: {
+                            grid: {
+                                color: gridColor
+                            },
+                            ticks: {
+                                color: textColor
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // Initialize charts on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            initCharts();
+            
+            // Simulate file upload
+            const uploadArea = document.querySelector('.upload-area');
+            uploadArea.addEventListener('click', function() {
+                // Scroll to processing section
+                document.getElementById('processing-section').scrollIntoView({
+                    behavior: 'smooth'
+                });
+                
+                // Animate progress bars
+                setTimeout(() => {
+                    const bars = document.querySelectorAll('.progress-bar');
+                    bars[0].style.width = "100%";
+                    
+                    setTimeout(() => {
+                        bars[1].style.width = "100%";
+                        
+                        setTimeout(() => {
+                            // Scroll to dashboard section
+                            document.getElementById('dashboard-section').scrollIntoView({
+                                behavior: 'smooth'
+                            });
+                        }, 1500);
+                    }, 1000);
+                }, 1000);
+            });
+        });
+    </script>
+</body>
+</html>
